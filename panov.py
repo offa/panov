@@ -107,14 +107,14 @@ def wrap180(angle: float) -> float:
 def _set_uniform_f(program, name: str, value: float) -> None:
     try:
         program.setUniformValue1f(name, float(value))
-    except Exception:
+    except RuntimeError:
         program.setUniformValue(name, float(value))
 
 
 def _set_uniform_i(program, name: str, value: int) -> None:
     try:
         program.setUniformValue1i(name, int(value))
-    except Exception:
+    except RuntimeError:
         program.setUniformValue(name, int(value))
 
 
@@ -703,7 +703,7 @@ class PanoramaSoftwareViewer(ViewerMixin, QWidget):
         painter = QPainter(self)
         try:
             self._paint(painter)
-        except Exception:
+        except (ValueError, RuntimeError, AttributeError):
             # An unhandled exception inside a Qt virtual can take the whole
             # process down; never let that happen during a repaint.
             traceback.print_exc()
@@ -872,7 +872,7 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
 
         try:
             max_tex = int(QOpenGLTexture.maximumSize())
-        except Exception:
+        except (AttributeError, ValueError):
             max_tex = 16384
         if max_tex > 0 and src.width() > max_tex:
             src = src.scaledToWidth(max_tex, Qt.TransformationMode.SmoothTransformation)
@@ -904,8 +904,8 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
         texture.setMagnificationFilter(QOpenGLTexture.Filter.Linear)
         try:
             texture.setMaximumAnisotropy(texture.maximumAnisotropy())
-        except Exception:
-            pass
+        except (AttributeError, TypeError) as e:
+            print(f"Warning: Could not set maximum anisotropy: {e}", file=sys.stderr)
         return texture
 
     def _release_gl(self) -> None:
@@ -947,7 +947,7 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
                 self._draw_panorama(f, width, height)
                 self._render_ms = (time.perf_counter() - started) * 1000.0
                 self._tick_fps()
-        except Exception:
+        except (ValueError, RuntimeError, AttributeError):
             traceback.print_exc()
         finally:
             painter.endNativePainting()
@@ -1027,8 +1027,8 @@ def gl_is_usable() -> tuple[bool, str]:
                 if isinstance(raw, (bytes, bytearray))
                 else str(raw)
             )
-        except Exception:
-            pass
+        except (AttributeError, ValueError, RuntimeError) as e:
+            print(f"Warning: Could not get OpenGL renderer: {e}", file=sys.stderr)
         if any(name in renderer.lower() for name in SOFTWARE_RENDERERS):
             return False, f"software OpenGL ({renderer})"
         return True, renderer or "unknown adapter"
