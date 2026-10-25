@@ -724,7 +724,7 @@ class PanoramaSoftwareViewer(ViewerMixin, QWidget):
             else:
                 render_w = int(min(3000.0, max(360.0, width * dpr)))
                 bilinear = True
-            render_h = max(2, int(round(render_w * height / width)))
+            render_h = max(2, round(render_w * height / width))
 
             started = time.perf_counter()
             frame = self.renderer.render(
