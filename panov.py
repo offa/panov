@@ -266,35 +266,48 @@ class EquirectRenderer:
         out_w = max(2, int(out_w))
         out_h = max(2, int(out_h))
 
-        dx, dy, dz = self._camera_rays(out_w, out_h, round(camera.fov, 4))
+        rays = self._camera_rays(out_w, out_h, round(camera.fov, 4))
+        x, y, z = self._rotate_rays(*rays, camera.pitch, camera.yaw)
+        u, v = self._equirectangular_coords(x, y, z)
 
-        pitch = math.radians(camera.pitch)
-        yaw = math.radians(camera.yaw)
+        sampler = self._sample_bilinear if bilinear else self._sample_nearest
+        pixels = sampler(self._src, u, v)
+
+        rgba, frame = self._target(out_w, out_h)
+        rgba[..., :3] = pixels
+        return frame
+
+    @staticmethod
+    def _rotate_rays(
+        dx: np.ndarray,
+        dy: np.ndarray,
+        dz: np.ndarray,
+        pitch: float,
+        yaw: float,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Rotate camera-space rays into world directions."""
+        pitch = math.radians(pitch)
+        yaw = math.radians(yaw)
         cp, sp = math.cos(pitch), math.sin(pitch)
         cy, sy = math.cos(yaw), math.sin(yaw)
 
-        # World direction = R_y(yaw) @ R_x(pitch) @ camera_ray
         y1 = dy * cp + dz * sp
         z1 = dz * cp - dy * sp
         x2 = dx * cy + z1 * sy
         z2 = z1 * cy - dx * sy
 
-        # Spherical coordinates -> equirectangular texel coordinates.
-        lon = np.arctan2(x2, z2)  # [-pi, pi]
-        lat = np.arcsin(np.clip(y1, -1.0, 1.0))  # [-pi/2, pi/2]
+        return x2, y1, z2
+
+    def _equirectangular_coords(
+        self, x: np.ndarray, y: np.ndarray, z: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Convert world directions to equirectangular texel coordinates."""
+        lon = np.arctan2(x, z)
+        lat = np.arcsin(np.clip(y, -1.0, 1.0))
 
         u = (lon * (0.5 / math.pi) + 0.5) * self.width
         v = (0.5 - lat / math.pi) * self.height
-
-        src = self._src
-        if bilinear:
-            pixels = self._sample_bilinear(src, u, v)
-        else:
-            pixels = self._sample_nearest(src, u, v)
-
-        rgba, frame = self._target(out_w, out_h)
-        rgba[..., :3] = pixels
-        return frame
+        return u, v
 
     # -- sampling ---------------------------------------------------------- #
 
