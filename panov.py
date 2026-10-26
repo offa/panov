@@ -891,7 +891,7 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
             max_tex = int(QOpenGLTexture.maximumSize())
         except (AttributeError, ValueError):
             max_tex = 16384
-        if max_tex > 0 and src.width() > max_tex:
+        if 0 < max_tex < src.width():
             src = src.scaledToWidth(max_tex, Qt.TransformationMode.SmoothTransformation)
 
         src = src.convertToFormat(QImage.Format.Format_RGBA8888)
