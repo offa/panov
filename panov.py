@@ -503,7 +503,7 @@ class ViewerMixin:
     # Mouse
     # ------------------------------------------------------------------ #
 
-    def mousePressEvent(self, event) -> None:
+    def mousePressEvent(self, event) -> None:  # pylint: disable=invalid-name
         if event.button() == Qt.MouseButton.LeftButton and self._source is not None:
             self._dragging = True
             self._last_pos = event.position()
@@ -511,7 +511,7 @@ class ViewerMixin:
             self._touch()
             self.update()
 
-    def mouseMoveEvent(self, event) -> None:
+    def mouseMoveEvent(self, event) -> None:  # pylint: disable=invalid-name
         if not self._dragging or self._last_pos is None:
             return
         pos = event.position()
@@ -526,14 +526,14 @@ class ViewerMixin:
         self._touch()
         self.update()
 
-    def mouseReleaseEvent(self, event) -> None:
+    def mouseReleaseEvent(self, event) -> None:  # pylint: disable=invalid-name
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
             self._last_pos = None
             self.unsetCursor()
             self._touch()
 
-    def wheelEvent(self, event) -> None:
+    def wheelEvent(self, event) -> None:  # pylint: disable=invalid-name
         steps = event.angleDelta().y() / 120.0
         if not steps or self._source is None:
             return
@@ -586,7 +586,7 @@ class ViewerMixin:
     # Keyboard
     # ------------------------------------------------------------------ #
 
-    def keyPressEvent(self, event) -> None:
+    def keyPressEvent(self, event) -> None:  # pylint: disable=invalid-name
         if event.isAutoRepeat():
             event.accept()
             return
@@ -626,7 +626,7 @@ class ViewerMixin:
 
         super().keyPressEvent(event)
 
-    def keyReleaseEvent(self, event) -> None:
+    def keyReleaseEvent(self, event) -> None:  # pylint: disable=invalid-name
         if event.isAutoRepeat():
             event.accept()
             return
