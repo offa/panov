@@ -26,7 +26,7 @@ jobs:
           python-version: '3.13'
           cache: 'pip'
       - name: Install Dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
       - name: CodeQL Initialization
         uses: github/codeql-action/init@v4
         with:

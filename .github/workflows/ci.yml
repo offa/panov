@@ -22,9 +22,7 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: 'pip'
       - name: Install Dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install -U pylint ruff pyrefly
+        run: pip install -r requirements-dev.txt
       - name: Lint (pylint)
         run: pylint panov.py
       - name: Lint (ruff)
@@ -44,6 +42,6 @@ jobs:
           python-version: "3.13"
           cache: 'pip'
       - name: Setup
-        run: pip install requirements.txt
+        run: pip install -r requirements-dev.txt
       - name: Check Formatting
         run: ruff format --check --diff .
