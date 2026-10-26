@@ -330,28 +330,51 @@ class EquirectRenderer:
         np.nan_to_num(u, copy=False)
         np.nan_to_num(v, copy=False)
 
-        u0f = np.floor(u)
-        fu = (u - u0f).astype(np.float32)
-        u0 = u0f.astype(np.intp) % self.width
-        u1 = (u0 + 1) % self.width  # wraps at the seam
+        u0, u1, fu = self._bilinear_axis(u, self.width, wrap=True)
+        v0, v1, fv = self._bilinear_axis(v, self.height, wrap=False)
 
-        np.clip(v, 0.0, self.height - 1.0, out=v)
-        v0f = np.floor(v)
-        fv = (v - v0f).astype(np.float32)
-        v0 = v0f.astype(np.intp)
-        v1 = np.minimum(v0 + 1, self.height - 1)
+        return self._interpolate_bilinear(src, u0, u1, v0, v1, fu, fv)
 
-        fu3 = fu[..., None]
-        fv3 = fv[..., None]
+    @staticmethod
+    def _bilinear_axis(
+        coords: np.ndarray, size: int, *, wrap: bool
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return neighboring indices and interpolation fractions for one axis."""
+        if wrap:
+            i0f = np.floor(coords)
+            i0 = i0f.astype(np.intp) % size
+            i1 = (i0 + 1) % size  # wraps at the seam
+        else:
+            np.clip(coords, 0.0, size - 1.0, out=coords)
+            i0f = np.floor(coords)
+            i0 = i0f.astype(np.intp)
+            i1 = np.minimum(i0 + 1, size - 1)
+
+        fraction = (coords - i0f).astype(np.float32)
+        return i0, i1, fraction
+
+    @staticmethod
+    def _interpolate_bilinear(
+        src: np.ndarray,
+        u0: np.ndarray,
+        u1: np.ndarray,
+        v0: np.ndarray,
+        v1: np.ndarray,
+        fu: np.ndarray,
+        fv: np.ndarray,
+    ) -> np.ndarray:
+        """Interpolate the four neighboring texels."""
+        fu = fu[..., None]
+        fv = fv[..., None]
 
         c00 = src[v0, u0].astype(np.float32)
         c01 = src[v0, u1].astype(np.float32)
         c10 = src[v1, u0].astype(np.float32)
         c11 = src[v1, u1].astype(np.float32)
 
-        top = c00 + (c01 - c00) * fu3
-        bottom = c10 + (c11 - c10) * fu3
-        out = top + (bottom - top) * fv3
+        top = c00 + (c01 - c00) * fu
+        bottom = c10 + (c11 - c10) * fu
+        out = top + (bottom - top) * fv
 
         out += 0.5
         np.clip(out, 0.0, 255.0, out=out)
