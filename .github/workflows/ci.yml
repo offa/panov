@@ -22,7 +22,10 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: 'pip'
       - name: Install Dependencies
-        run: pip install -r requirements-dev.txt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1
+          pip install -r requirements-dev.txt
       - name: Lint (pylint)
         run: pylint panov.py
       - name: Lint (ruff)
