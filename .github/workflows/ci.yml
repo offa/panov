@@ -1,0 +1,49 @@
+name: ci
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: [ "3.10", "3.11", "3.12", "3.13", "3.14", "3.15" ]
+    name: python-${{ matrix.python }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+      - name: Setup python-${{ matrix.python }}
+        uses: actions/setup-python@main
+        with:
+          python-version: ${{ matrix.python }}
+          cache: 'pip'
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -U pylint ruff pyrefly
+      - name: Lint (pylint)
+        run: pylint panov.py
+      - name: Lint (ruff)
+        run: ruff check --output-format=github .
+      - name: Lint (pyrefly)
+        run: pyrefly check
+
+  formatting:
+    name: formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+      - name: Setup Python
+        uses: actions/setup-python@main
+        with:
+          python-version: "3.13"
+          cache: 'pip'
+      - name: Setup
+        run: pip install requirements.txt
+      - name: Check Formatting
+        run: ruff format --check --diff .
