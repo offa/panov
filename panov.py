@@ -25,9 +25,10 @@ import os
 import sys
 import time
 import traceback
+from dataclasses import dataclass, field
 
 import numpy as np
-from PySide6.QtCore import QElapsedTimer, QRect, Qt, QTimer
+from PySide6.QtCore import QElapsedTimer, QPointF, QRect, Qt, QTimer
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -113,7 +114,7 @@ def qimage_to_array(image: QImage) -> np.ndarray:
 
     owned = np.empty((height, width * 3), dtype=np.uint8)
     owned[:] = rows  # genuine memcpy, no aliasing
-    return owned.reshape(height, width, 3)
+    return owned.reshape((height, width, 3))
 
 
 def wrap180(angle: float) -> float:
@@ -153,6 +154,9 @@ class Camera:
         self.fov = self._clamp_fov(fov)
 
     # -- mutation ---------------------------------------------------------- #
+
+    def set_fow(self, fov: float) -> None:
+        self.fov = self._clamp_fov(fov)
 
     def rotate(self, d_yaw: float, d_pitch: float) -> None:
         self.yaw = wrap180(self.yaw + d_yaw)
@@ -333,7 +337,7 @@ class EquirectRenderer:
         u0, u1, fu = self._bilinear_axis(u, self.width, wrap=True)
         v0, v1, fv = self._bilinear_axis(v, self.height, wrap=False)
 
-        return self._interpolate_bilinear(src, u0, u1, v0, v1, fu, fv)
+        return self._interpolate_bilinear(src, (u0, u1), (v0, v1), (fu, fv))
 
     @staticmethod
     def _bilinear_axis(
@@ -356,25 +360,25 @@ class EquirectRenderer:
     @staticmethod
     def _interpolate_bilinear(
         src: np.ndarray,
-        u0: np.ndarray,
-        u1: np.ndarray,
-        v0: np.ndarray,
-        v1: np.ndarray,
-        fu: np.ndarray,
-        fv: np.ndarray,
+        u_bounds: tuple[np.ndarray, np.ndarray],
+        v_bounds: tuple[np.ndarray, np.ndarray],
+        f_weights: tuple[np.ndarray, np.ndarray],
     ) -> np.ndarray:
         """Interpolate the four neighboring texels."""
-        fu = fu[..., None]
-        fv = fv[..., None]
+        u0, u1 = u_bounds
+        v0, v1 = v_bounds
+        fu, fv = f_weights
 
-        c00 = src[v0, u0].astype(np.float32)
-        c01 = src[v0, u1].astype(np.float32)
-        c10 = src[v1, u0].astype(np.float32)
-        c11 = src[v1, u1].astype(np.float32)
+        # Expand weights for broadcasting
+        fu, fv = fu[..., None], fv[..., None]
 
-        top = c00 + (c01 - c00) * fu
-        bottom = c10 + (c11 - c10) * fu
-        out = top + (bottom - top) * fv
+        # top = c00 * (1-fu) + c01 * fu
+        top = src[v0, u0] * (1 - fu) + src[v0, u1] * fu
+        # bottom = c10 * (1-fu) + c11 * fu
+        bottom = src[v1, u0] * (1 - fu) + src[v1, u1] * fu
+
+        # out = top * (1-fv) + bottom * fv
+        out = (top * (1 - fv) + bottom * fv).astype(np.float32)
 
         out += 0.5
         np.clip(out, 0.0, 255.0, out=out)
@@ -384,6 +388,28 @@ class EquirectRenderer:
 # --------------------------------------------------------------------------- #
 # Shared viewer behaviour
 # --------------------------------------------------------------------------- #
+
+
+@dataclass
+class _Input:
+    """Mouse/keyboard navigation state and its key-repeat timer."""
+
+    timer: QTimer
+    clock: QElapsedTimer
+    keys: set[int] = field(default_factory=set)
+    dragging: bool = False
+    last_pos: QPointF | None = None
+    interactive: bool = False
+
+
+@dataclass
+class _Stats:
+    """Render timing counters for the status overlay."""
+
+    clock: QElapsedTimer = field(default_factory=QElapsedTimer)
+    render_ms: float = 0.0
+    fps: float = 0.0
+    frames: int = 0
 
 
 class ViewerMixin:
@@ -399,13 +425,16 @@ class ViewerMixin:
 
     # -- construction ------------------------------------------------------ #
 
-    def _init_common(
+    def __init__(
         self,
         name: str,
         error: str | None,
         show_info: bool,
         source: QImage | None,
+        parent: QWidget | None = None,
     ) -> None:
+        super().__init__(parent)
+
         self.cam = Camera()
         self._name = name
         self._error = error
@@ -417,21 +446,16 @@ class ViewerMixin:
             and abs(source.width() / source.height() - 2.0) > 0.05
         )
 
-        self._dragging = False
-        self._keys: set[int] = set()
-        self._last_pos = None
+        nav_timer = QTimer(self)
+        nav_timer.setInterval(self.NAV_INTERVAL_MS)
+        nav_timer.timeout.connect(self._on_nav_tick)  # pylint: disable=no-member
 
-        self._nav_timer = QTimer(self)
-        self._nav_timer.setInterval(self.NAV_INTERVAL_MS)
-        self._nav_timer.timeout.connect(self._on_nav_tick)
-        self._nav_clock = QElapsedTimer()
-        self._nav_clock.start()
+        nav_clock = QElapsedTimer()
+        nav_clock.start()
 
-        self._render_ms = 0.0
-        self._fps = 0.0
-        self._frame_count = 0
-        self._fps_clock = QElapsedTimer()
-        self._fps_clock.start()
+        self._input = _Input(timer=nav_timer, clock=nav_clock)
+        self._stats = _Stats()
+        self._stats.clock.start()
 
     def _apply_window_common(self, name: str) -> None:
         self.setWindowTitle(f"Panov - {name}")
@@ -446,7 +470,7 @@ class ViewerMixin:
         timer = getattr(self, "_settle_timer", None)
         if timer is None:
             return
-        self._interactive = True
+        self._input.interactive = True
         timer.start()
 
     @property
@@ -468,14 +492,25 @@ class ViewerMixin:
         )
 
     def _tick_fps(self) -> None:
-        self._frame_count += 1
-        elapsed = self._fps_clock.elapsed()
+        stats = self._stats
+        stats.frames += 1
+        elapsed = stats.clock.elapsed()
         if elapsed >= 500:
-            self._fps = self._frame_count * 1000.0 / elapsed
-            self._frame_count = 0
-            self._fps_clock.restart()
+            stats.fps = stats.frames * 1000.0 / elapsed
+            stats.frames = 0
+            stats.clock.restart()
 
-    def _draw_status(self, painter: QPainter, width: int, height: int) -> None:
+    @staticmethod
+    def _status_layout(
+        lines: list[str], metrics: QFontMetrics
+    ) -> tuple[int, int, int, int]:
+        """Dimensions and position for the status panel."""
+        pad = 10
+        box_w = max(metrics.horizontalAdvance(line) for line in lines) + 2 * pad
+        box_h = metrics.lineSpacing() * len(lines) + 2 * pad
+        return 12, 12, box_w, box_h
+
+    def _draw_status(self, painter: QPainter) -> None:
         """Semi-transparent status panel in the top-left corner."""
         if self._source is None:
             return
@@ -491,24 +526,22 @@ class ViewerMixin:
             f"source      {self._source.width()} x {self._source.height()} px",
             f"yaw/pitch   {self.cam.yaw:+7.1f}deg  {self.cam.pitch:+6.1f}deg",
             f"fov/zoom    {self.cam.fov:7.1f}deg  {self.cam.zoom_level:5.2f}x",
-            f"render      {self._render_ms:6.1f} ms  {self._fps:4.0f} fps",
+            f"render      {self._stats.render_ms:6.1f} ms  {self._stats.fps:4.0f} fps",
             f"backend     {self._backend_label}",
         ]
         if self._aspect_warning:
             lines.append("note        source aspect is not 2:1 (may look stretched)")
 
-        pad, left, top = 10, 12, 12
-        box_w = max(metrics.horizontalAdvance(line) for line in lines) + 2 * pad
-        box_h = metrics.lineSpacing() * len(lines) + 2 * pad
+        left, top, box_w, box_h = self._status_layout(lines, metrics)
 
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(10, 12, 16, 175))
         painter.drawRoundedRect(QRect(left, top, box_w, box_h), 8, 8)
 
         painter.setPen(QColor(235, 239, 248))
-        y = top + pad + metrics.ascent()
+        y = top + 10 + metrics.ascent()
         for line in lines:
-            painter.drawText(left + pad, y, line)
+            painter.drawText(left + 10, y, line)
             y += metrics.lineSpacing()
 
     def _draw_hints(self, painter: QPainter, width: int, height: int) -> None:
@@ -541,19 +574,20 @@ class ViewerMixin:
 
     def mousePressEvent(self, event) -> None:  # pylint: disable=invalid-name
         if event.button() == Qt.MouseButton.LeftButton and self._source is not None:
-            self._dragging = True
-            self._last_pos = event.position()
+            self._input.dragging = True
+            self._input.last_pos = event.position()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             self._touch()
             self.update()
 
     def mouseMoveEvent(self, event) -> None:  # pylint: disable=invalid-name
-        if not self._dragging or self._last_pos is None:
+        nav = self._input
+        if not nav.dragging or nav.last_pos is None:
             return
         pos = event.position()
-        dx = pos.x() - self._last_pos.x()
-        dy = pos.y() - self._last_pos.y()
-        self._last_pos = pos
+        dx = pos.x() - nav.last_pos.x()
+        dy = pos.y() - nav.last_pos.y()
+        nav.last_pos = pos
 
         # 1:1 "grab" feel: one pixel of drag == one pixel of image motion.
         deg_per_px = self.cam.fov / max(1, self.height())
@@ -564,8 +598,8 @@ class ViewerMixin:
 
     def mouseReleaseEvent(self, event) -> None:  # pylint: disable=invalid-name
         if event.button() == Qt.MouseButton.LeftButton:
-            self._dragging = False
-            self._last_pos = None
+            self._input.dragging = False
+            self._input.last_pos = None
             self.unsetCursor()
             self._touch()
 
@@ -584,10 +618,8 @@ class ViewerMixin:
         self.cam.zoom(factor)
 
         lon_new, lat_new = self._ray_lonlat(pos.x(), pos.y())
-        self.cam.yaw = wrap180(old_yaw + (lon_c - old_yaw) - (lon_new - old_yaw))
-        self.cam.pitch = max(
-            -90.0, min(90.0, old_pitch + (lat_c - old_pitch) - (lat_new - old_pitch))
-        )
+        self.cam.yaw = wrap180(old_yaw + lon_c - lon_new)
+        self.cam.pitch = max(-90.0, min(90.0, old_pitch + lat_c - lat_new))
 
         self._touch()
         self.update()
@@ -597,26 +629,22 @@ class ViewerMixin:
         width, height = max(1, self.width()), max(1, self.height())
         tan_half = math.tan(math.radians(self.cam.fov * 0.5))
 
-        ndc_x = (px + 0.5) / width * 2.0 - 1.0
-        ndc_y = (py + 0.5) / height * 2.0 - 1.0
+        ndc = np.array(
+            [(px + 0.5) / width * 2.0 - 1.0, (py + 0.5) / height * 2.0 - 1.0]
+        )
 
-        dx = ndc_x * tan_half * (width / height)
-        dy = -ndc_y * tan_half
-        dz = 1.0
-        norm = math.sqrt(dx * dx + dy * dy + dz * dz)
-        dx, dy, dz = dx / norm, dy / norm, dz / norm
+        ray = np.array([ndc[0] * tan_half * (width / height), -ndc[1] * tan_half, 1.0])
+        ray /= np.linalg.norm(ray)
 
-        pitch = math.radians(self.cam.pitch)
-        yaw = math.radians(self.cam.yaw)
-        cp, sp = math.cos(pitch), math.sin(pitch)
-        cy, sy = math.cos(yaw), math.sin(yaw)
+        pitch, yaw = map(math.radians, [self.cam.pitch, self.cam.yaw])
 
-        y1 = dy * cp + dz * sp
-        z1 = dz * cp - dy * sp
-        x2 = dx * cy + z1 * sy
-        z2 = z1 * cy - dx * sy
+        y1 = ray[1] * math.cos(pitch) + ray[2] * math.sin(pitch)
+        z1 = ray[2] * math.cos(pitch) - ray[1] * math.sin(pitch)
 
-        return math.atan2(x2, z2), math.asin(max(-1.0, min(1.0, y1)))
+        x2 = ray[0] * math.cos(yaw) + z1 * math.sin(yaw)
+        z2 = z1 * math.cos(yaw) - ray[0] * math.sin(yaw)
+
+        return math.atan2(x2, z2), math.asin(np.clip(y1, -1.0, 1.0))
 
     # ------------------------------------------------------------------ #
     # Keyboard
@@ -652,10 +680,11 @@ class ViewerMixin:
             return
 
         if key in NAV_KEYS:
-            self._keys.add(key)
-            if not self._nav_timer.isActive():
-                self._nav_clock.restart()
-                self._nav_timer.start()
+            nav = self._input
+            nav.keys.add(key)
+            if not nav.timer.isActive():
+                nav.clock.restart()
+                nav.timer.start()
             self._touch()
             event.accept()
             return
@@ -667,35 +696,37 @@ class ViewerMixin:
             event.accept()
             return
         if event.key() in NAV_KEYS:
-            self._keys.discard(event.key())
-            if not self._keys:
-                self._nav_timer.stop()
+            nav = self._input
+            nav.keys.discard(event.key())
+            if not nav.keys:
+                nav.timer.stop()
             self._touch()
             event.accept()
             return
         super().keyReleaseEvent(event)
 
     def _on_nav_tick(self) -> None:
-        dt = max(0.001, min(0.1, self._nav_clock.restart() / 1000.0))
+        nav = self._input
+        dt = max(0.001, min(0.1, nav.clock.restart() / 1000.0))
         speed = 70.0 * (self.cam.fov / Camera.DEFAULT_FOV)  # deg/s, zoom-aware
 
         d_yaw = d_pitch = 0.0
-        if self._keys & {Qt.Key.Key_Left, Qt.Key.Key_A}:
+        if nav.keys & {Qt.Key.Key_Left, Qt.Key.Key_A}:
             d_yaw -= speed * dt
-        if self._keys & {Qt.Key.Key_Right, Qt.Key.Key_D}:
+        if nav.keys & {Qt.Key.Key_Right, Qt.Key.Key_D}:
             d_yaw += speed * dt
-        if self._keys & {Qt.Key.Key_Up, Qt.Key.Key_W}:
+        if nav.keys & {Qt.Key.Key_Up, Qt.Key.Key_W}:
             d_pitch += speed * dt
-        if self._keys & {Qt.Key.Key_Down, Qt.Key.Key_S}:
+        if nav.keys & {Qt.Key.Key_Down, Qt.Key.Key_S}:
             d_pitch -= speed * dt
         if d_yaw or d_pitch:
             self.cam.rotate(d_yaw, d_pitch)
 
         zoom_keys = {Qt.Key.Key_Plus, Qt.Key.Key_Equal}
         shrink_keys = {Qt.Key.Key_Minus, Qt.Key.Key_Underscore}
-        if self._keys & zoom_keys:
+        if nav.keys & zoom_keys:
             self.cam.zoom(0.9 ** (dt * 10.0))
-        if self._keys & shrink_keys:
+        if nav.keys & shrink_keys:
             self.cam.zoom((1.0 / 0.9) ** (dt * 10.0))
 
         self.update()
@@ -713,7 +744,7 @@ class ViewerMixin:
 
 
 class PanoramaSoftwareViewer(ViewerMixin, QWidget):
-    """Software (NumPy) renderer.  Used when OpenGL is not a good option."""
+    """Software (NumPy) renderer. Used when OpenGL is not a good option."""
 
     def __init__(
         self,
@@ -723,22 +754,19 @@ class PanoramaSoftwareViewer(ViewerMixin, QWidget):
         show_info: bool = True,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent)
+        source = image if image is not None and not image.isNull() else None
+        super().__init__(name, error, show_info, source, parent)
 
         self._apply_window_common(name)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
 
-        source = image if image is not None and not image.isNull() else None
-        self._init_common(name, error, show_info, source)
-
         self.renderer = EquirectRenderer(source) if source is not None else None
 
-        # Interaction state specific to the two-tier CPU render.
-        self._interactive = False
+        self._input.interactive = False
         self._settle_timer = QTimer(self)
         self._settle_timer.setSingleShot(True)
         self._settle_timer.setInterval(self.SETTLE_MS)
-        self._settle_timer.timeout.connect(self._on_settle)
+        self._settle_timer.timeout.connect(self._on_settle)  # pylint: disable=no-member
 
     # ------------------------------------------------------------------ #
 
@@ -746,13 +774,13 @@ class PanoramaSoftwareViewer(ViewerMixin, QWidget):
         if self._dragging or self._keys:
             self._settle_timer.start()
             return
-        if self._interactive:
-            self._interactive = False
+        if self._input.interactive:
+            self._input.interactive = False
             self.update()
 
     # ------------------------------------------------------------------ #
 
-    def paintEvent(self, event) -> None:
+    def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         try:
             self._paint(painter)
@@ -771,7 +799,7 @@ class PanoramaSoftwareViewer(ViewerMixin, QWidget):
             self._draw_error(painter, width, height)
         else:
             dpr = self.devicePixelRatioF() or 1.0
-            if self._interactive:
+            if self._input.interactive:
                 render_w = int(min(900.0, max(360.0, width * dpr * 0.5)))
                 bilinear = False
             else:
@@ -783,14 +811,14 @@ class PanoramaSoftwareViewer(ViewerMixin, QWidget):
             frame = self.renderer.render(
                 self.cam, render_w, render_h, bilinear=bilinear
             )
-            self._render_ms = (time.perf_counter() - started) * 1000.0
+            self._stats.render_ms = (time.perf_counter() - started) * 1000.0
 
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
             painter.drawImage(QRect(0, 0, width, height), frame)
             self._tick_fps()
 
         if self._show_info:
-            self._draw_status(painter, width, height)
+            self._draw_status(painter)
         self._draw_hints(painter, width, height)
 
 
@@ -865,12 +893,10 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
         show_info: bool = True,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent)
+        source = image if image is not None and not image.isNull() else None
+        super().__init__(name, error, show_info, source, parent)
 
         self._apply_window_common(name)
-
-        source = image if image is not None and not image.isNull() else None
-        self._init_common(name, error, show_info, source)
 
         self._gl = None
         self._program: QOpenGLShaderProgram | None = None
@@ -998,7 +1024,7 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
             if self._program is not None and self._texture is not None:
                 started = time.perf_counter()
                 self._draw_panorama(f, width, height)
-                self._render_ms = (time.perf_counter() - started) * 1000.0
+                self._stats.render_ms = (time.perf_counter() - started) * 1000.0
                 self._tick_fps()
         except (ValueError, RuntimeError, AttributeError):
             traceback.print_exc()
@@ -1007,7 +1033,7 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
             if self._source is None:
                 self._draw_error(painter, width, height)
             elif self._show_info:
-                self._draw_status(painter, width, height)
+                self._draw_status(painter)
             self._draw_hints(painter, width, height)
             painter.end()
 
@@ -1188,7 +1214,7 @@ def main(argv: list[str] | None = None) -> int:
         error,
         show_info=not args.no_info,
     )
-    viewer.cam.fov = Camera._clamp_fov(args.fov)
+    viewer.cam.set_fow(args.fov)
     viewer.resize(*parse_size(args.size))
 
     if args.fullscreen:
