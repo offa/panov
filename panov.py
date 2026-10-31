@@ -155,7 +155,7 @@ class Camera:
 
     # -- mutation ---------------------------------------------------------- #
 
-    def set_fow(self, fov: float) -> None:
+    def set_fov(self, fov: float) -> None:
         self.fov = self._clamp_fov(fov)
 
     def rotate(self, d_yaw: float, d_pitch: float) -> None:
@@ -466,7 +466,7 @@ class ViewerMixin:
     # -- hooks overridden by the CPU viewer -------------------------------- #
 
     def _touch(self) -> None:
-        """CPU viewer: mark the camera as moving so we render cheaply."""
+        """Mark the camera as moving so we render cheaply."""
         timer = getattr(self, "_settle_timer", None)
         if timer is None:
             return
@@ -1214,7 +1214,7 @@ def main(argv: list[str] | None = None) -> int:
         error,
         show_info=not args.no_info,
     )
-    viewer.cam.set_fow(args.fov)
+    viewer.cam.set_fov(args.fov)
     viewer.resize(*parse_size(args.size))
 
     if args.fullscreen:
