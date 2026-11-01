@@ -149,6 +149,8 @@ class Camera:
     DEFAULT_FOV = 75.0
 
     def __init__(self, fov: float = DEFAULT_FOV) -> None:
+        if fov <= 0:
+            raise ValueError("FOV must be positive")
         self.yaw = 0.0  # degrees, positive = looking right
         self.pitch = 0.0  # degrees, positive = looking up
         self.fov = self._clamp_fov(fov)
@@ -1103,7 +1105,7 @@ def gl_is_usable() -> tuple[bool, str]:
             raw = ctx.functions().glGetString(GL_RENDERER)
             renderer = (
                 raw.decode(errors="replace")
-                if isinstance(raw, (bytes, bytearray))
+                if isinstance(raw, (bytes, bytearray)) and raw is not None
                 else str(raw)
             )
         except (AttributeError, ValueError, RuntimeError) as e:
