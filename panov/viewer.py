@@ -316,8 +316,10 @@ class ViewerMixin:
         self.cam.zoom(factor)
 
         lon_new, lat_new = self._ray_lonlat(pos.x(), pos.y())
-        self.cam.yaw = wrap180(old_yaw + lon_c - lon_new)
-        self.cam.pitch = max(-90.0, min(90.0, old_pitch + lat_c - lat_new))
+        self.cam.yaw = wrap180(old_yaw + math.degrees(lon_c - lon_new))
+        self.cam.pitch = max(
+            -90.0, min(90.0, old_pitch + math.degrees(lat_c - lat_new))
+        )
 
         self._touch()
         self.update()
