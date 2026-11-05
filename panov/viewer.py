@@ -640,6 +640,7 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
         self._texture = None
         self._program = None
         self._vao = None
+        self._context_hooked = False
         self.doneCurrent()
 
     def closeEvent(self, event) -> None:
