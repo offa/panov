@@ -403,6 +403,15 @@ class ViewerMixin:
             return
         super().keyReleaseEvent(event)
 
+    def focusOutEvent(self, event) -> None:
+        nav = self._input
+        nav.keys.clear()
+        nav.timer.stop()
+        nav.dragging = False
+        nav.last_pos = None
+        self._touch()
+        super().focusOutEvent(event)
+
     def _on_nav_tick(self) -> None:
         nav = self._input
         dt = max(0.001, min(0.1, nav.clock.restart() / 1000.0))
