@@ -494,7 +494,7 @@ class PanoramaSoftwareViewer(ViewerMixin, QWidget):
     def _paint(self, painter: QPainter) -> None:
         width, height = max(1, self.width()), max(1, self.height())
 
-        if self.renderer is None:
+        if self._source is None or self._program is None or self._texture is None:
             self._draw_error(painter, width, height)
         else:
             dpr = self.devicePixelRatioF() or 1.0
