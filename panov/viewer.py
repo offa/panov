@@ -403,7 +403,7 @@ class ViewerMixin:
             return
         super().keyReleaseEvent(event)
 
-    def focusOutEvent(self, event) -> None:
+    def focusOutEvent(self, event) -> None:  # pylint: disable=invalid-name
         nav = self._input
         nav.keys.clear()
         nav.timer.stop()
