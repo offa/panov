@@ -59,12 +59,14 @@ def gl_is_usable() -> tuple[bool, str]:
 
     ctx = QOpenGLContext()
     ctx.setFormat(fmt)
-    if not ctx.create() or not ctx.makeCurrent(surface):
+    if not ctx.create():
         return False, "no OpenGL 3.3 core context"
 
     try:
         if ctx.format().version() < (3, 3):
             return False, f"OpenGL {ctx.format().version()} < 3.3"
+        if not ctx.makeCurrent(surface):
+            return False, "could not make context current"
         renderer = ""
         try:
             raw = ctx.functions().glGetString(GL_RENDERER)
