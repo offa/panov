@@ -316,16 +316,14 @@ class ViewerMixin:
         self.cam.zoom(factor)
 
         lon_new, lat_new = self._ray_lonlat(pos.x(), pos.y())
-        self.cam.yaw = wrap180(old_yaw + math.degrees(lon_c - lon_new))
-        self.cam.pitch = max(
-            -90.0, min(90.0, old_pitch + math.degrees(lat_c - lat_new))
-        )
+        self.cam.yaw = wrap180(old_yaw + lon_c - lon_new)
+        self.cam.pitch = max(-90.0, min(90.0, old_pitch + lat_c - lat_new))
 
         self._touch()
         self.update()
 
     def _ray_lonlat(self, px: float, py: float) -> tuple[float, float]:
-        """Longitude/latitude (radians) of the ray through a widget pixel."""
+        """Longitude/latitude in degrees of the ray through a widget pixel."""
         width, height = max(1, self.width()), max(1, self.height())
         tan_half = math.tan(math.radians(self.cam.fov * 0.5))
 
@@ -344,7 +342,9 @@ class ViewerMixin:
         x2 = ray[0] * math.cos(yaw) + z1 * math.sin(yaw)
         z2 = z1 * math.cos(yaw) - ray[0] * math.sin(yaw)
 
-        return math.atan2(x2, z2), math.asin(np.clip(y1, -1.0, 1.0))
+        return math.degrees(math.atan2(x2, z2)), math.degrees(
+            math.asin(np.clip(y1, -1.0, 1.0))
+        )
 
     # ------------------------------------------------------------------ #
     # Keyboard
