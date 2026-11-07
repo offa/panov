@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import math
+import os
 import sys
 import time
 import traceback
@@ -154,6 +155,42 @@ class ViewerMixin:
         self._input = _Input(timer=nav_timer, clock=nav_clock)
         self._stats = _Stats()
         self._stats.clock.start()
+
+    @property
+    def error(self) -> str | None:
+        return self._error
+
+    def load_image(self, path: str) -> None:
+        """Load a new panorama from disk, replacing the current source."""
+        path = os.fspath(path)
+        name = os.path.basename(path)
+        self._name = name or "no image"
+
+        if not os.path.isfile(path):
+            self._source = None
+            self._error = f"file not found: {path}"
+            self._aspect_warning = False
+        else:
+            image = QImage(path)
+            if image.isNull():
+                self._source = None
+                self._error = f"could not decode image: {path}"
+                self._aspect_warning = False
+            else:
+                self._source = image
+                self._error = None
+                self._aspect_warning = bool(
+                    image.height() > 0
+                    and abs(image.width() / image.height() - 2.0) > 0.05
+                )
+
+        self._on_source_changed()
+        self._apply_window_common(self._name)
+        self._touch()
+        self.update()
+
+    def _on_source_changed(self) -> None:
+        """Hook for subclasses to rebuild backend state after a source change."""
 
     def _apply_window_common(self, name: str) -> None:
         self.setWindowTitle(f"Panov - {name}")
@@ -358,10 +395,11 @@ class ViewerMixin:
         key = event.key()
 
         if key == Qt.Key.Key_Escape:
-            if self.isFullScreen():
-                self.showNormal()
+            win = self.window()
+            if win.isFullScreen():
+                win.showNormal()
             else:
-                self.close()
+                win.close()
             return
 
         if key in (Qt.Key.Key_F, Qt.Key.Key_F11):
@@ -441,10 +479,11 @@ class ViewerMixin:
         self.update()
 
     def _toggle_fullscreen(self) -> None:
-        if self.isFullScreen():
-            self.showNormal()
+        win = self.window()
+        if win.isFullScreen():
+            win.showNormal()
         else:
-            self.showFullScreen()
+            win.showFullScreen()
 
 
 # --------------------------------------------------------------------------- #
@@ -479,6 +518,11 @@ class PanoramaSoftwareViewer(ViewerMixin, QWidget):
 
     # ------------------------------------------------------------------ #
 
+    def _on_source_changed(self) -> None:
+        self.renderer = (
+            EquirectRenderer(self._source) if self._source is not None else None
+        )
+
     def _on_settle(self) -> None:
         nav = self._input
         if nav.dragging or nav.keys:
@@ -505,7 +549,7 @@ class PanoramaSoftwareViewer(ViewerMixin, QWidget):
     def _paint(self, painter: QPainter) -> None:
         width, height = max(1, self.width()), max(1, self.height())
 
-        if self._source is None or self._program is None or self._texture is None:
+        if self._source is None or self.renderer is None:
             self._draw_error(painter, width, height)
         else:
             dpr = self.devicePixelRatioF() or 1.0
@@ -527,7 +571,7 @@ class PanoramaSoftwareViewer(ViewerMixin, QWidget):
             painter.drawImage(QRect(0, 0, width, height), frame)
             self._tick_fps()
 
-        if self._show_info:
+        if self._show_info and self._source is not None and self.renderer is not None:
             self._draw_status(painter)
         self._draw_hints(painter, width, height)
 
@@ -561,6 +605,8 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
         self._u_bias = 0.0
         self._context_hooked = False
         self._gl_failed = False
+        self._gl_error: str | None = None
+        self._needs_texture_rebuild = False
 
     @property
     def _backend_label(self) -> str:
@@ -589,7 +635,8 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
         )
         if not ok:
             self._gl_failed = True
-            self._error = f"shader error:\n{program.log()}"
+            self._gl_error = f"shader error:\n{program.log()}"
+            self._error = self._gl_error
             return
         self._program = program
 
@@ -599,6 +646,7 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
 
         if self._source is not None:
             self._texture = self._build_texture()
+        self._needs_texture_rebuild = False
 
     def _build_texture(self) -> QOpenGLTexture | None:
         """Upload the panorama once, wrapped-padded so mipmaps stay seamless."""
@@ -642,6 +690,11 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
             print(f"Warning: Could not set maximum anisotropy: {e}", file=sys.stderr)
         return texture
 
+    def _on_source_changed(self) -> None:
+        self._needs_texture_rebuild = True
+        if self._gl_failed:
+            self._error = self._gl_error
+
     def _release_gl(self) -> None:
         if not self.isValid():
             return
@@ -673,9 +726,19 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
         painter.beginNativePainting()
         try:
             f = self._gl
+            if f is None:
+                return
+
             f.glViewport(0, 0, round(width * dpr), round(height * dpr))
             f.glClearColor(0.07, 0.08, 0.10, 1.0)
             f.glClear(GL_COLOR_BUFFER_BIT)
+
+            if self._needs_texture_rebuild:
+                if self._source is not None:
+                    self._texture = self._build_texture()
+                else:
+                    self._texture = None
+                self._needs_texture_rebuild = False
 
             if self._program is not None and self._texture is not None:
                 started = time.perf_counter()
@@ -686,7 +749,7 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
             traceback.print_exc()
         finally:
             painter.endNativePainting()
-            if self._source is None:
+            if self._source is None or self._gl_failed or self._program is None:
                 self._draw_error(painter, width, height)
             elif self._show_info:
                 self._draw_status(painter)

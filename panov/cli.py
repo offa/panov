@@ -20,15 +20,16 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 
-from PySide6.QtGui import QImage, QOffscreenSurface, QOpenGLContext, QSurfaceFormat
+from PySide6.QtGui import QOffscreenSurface, QOpenGLContext, QSurfaceFormat
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from .camera import Camera
+from .main_window import PanovMainWindow
 from .render import GL_RENDERER, SOFTWARE_RENDERERS
 from .viewer import PanoramaOpenGLViewer, PanoramaSoftwareViewer
+
 
 # --------------------------------------------------------------------------- #
 # Environment checks
@@ -154,44 +155,31 @@ def main(argv: list[str] | None = None) -> int:
     if not use_gl:
         print(f"Using CPU renderer ({reason})", file=sys.stderr)
 
-    path = args.image
+    viewer_cls = PanoramaOpenGLViewer if use_gl else PanoramaSoftwareViewer
+    viewer = viewer_cls(None, "no image", None, show_info=not args.no_info)
+    main_window = PanovMainWindow(viewer)
+
+    path = args.image or None
     if path is None:
         path, _ = QFileDialog.getOpenFileName(
-            None,
+            main_window,
             "Open panorama",
             "",
-            "Panoramas (*.jpg *.JPG *.jpeg *.JPEG *.png *.PNG);;All files (*)",
+            "Panoramas (*.jpg *.JPG *.jpeg *.JPEG *.png *.PNG *.bmp *.BMP *.tiff *.TIFF *.tif *.TIF);;All files (*)",
         )
         if not path:
             return 0
 
-    image = QImage()
-    error: str | None = None
-
-    if not os.path.isfile(path):
-        error = f"file not found: {path}"
-    else:
-        image = QImage(path)
-        if image.isNull():
-            error = f"could not decode image: {path}"
-
-    name = os.path.basename(path)
-    viewer_cls = PanoramaOpenGLViewer if use_gl else PanoramaSoftwareViewer
-    viewer = viewer_cls(
-        image if not image.isNull() else None,
-        name,
-        error,
-        show_info=not args.no_info,
-    )
+    main_window.load_image(path)
     viewer.cam.set_fov(args.fov)
-    viewer.resize(*parse_size(args.size))
+    main_window.resize(*parse_size(args.size))
 
     if args.fullscreen:
-        viewer.showFullScreen()
+        main_window.showFullScreen()
     else:
-        viewer.show()
+        main_window.show()
 
-    if error:
-        QMessageBox.warning(None, "Panov", error)
+    if viewer.error:
+        QMessageBox.warning(main_window, "Panov", viewer.error)
 
     return app.exec()
