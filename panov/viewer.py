@@ -109,12 +109,12 @@ class ViewerMixin:
 
     Concrete viewers must also provide:
 
-    ``cam``            Camera instance (set up by ``_init_common``)
+    ``cam``            Camera instance (set up by ``__init__``)
     ``_source``        QImage or None
     ``_error``         str or None
     ``_show_info``     bool
-    ``_input``         _Input (set up by ``_init_common``)
-    ``_stats``         _Stats (set up by ``_init_common``)
+    ``_input``         _Input (set up by ``__init__``)
+    ``_stats``         _Stats (set up by ``__init__``)
     ``_settle_timer``  QTimer, or absent/None for viewers with no settle delay
     ``_backend_label`` str property, used by the status overlay
     """
