@@ -22,7 +22,7 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import Qt, QTimer, QSize, Signal
-from PySide6.QtGui import QIcon, QImageReader, QPixmap
+from PySide6.QtGui import QFontMetrics, QIcon, QImageReader, QPixmap
 from PySide6.QtWidgets import QDockWidget, QListWidget, QListWidgetItem, QWidget
 
 IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"})
@@ -85,10 +85,7 @@ class ImageBrowserDock(QDockWidget):
             return
 
         for file_path in paths:
-            item = QListWidgetItem(os.path.basename(file_path))
-            item.setIcon(QIcon())
-            item.setData(Qt.ItemDataRole.UserRole, file_path)
-            item.setToolTip(file_path)
+            item = self._make_item(file_path)
             self._list.addItem(item)
             self._pending.append((item, file_path))
 
@@ -99,6 +96,16 @@ class ImageBrowserDock(QDockWidget):
         item = QListWidgetItem(text)
         item.setFlags(Qt.ItemFlag.NoItemFlags)
         self._list.addItem(item)
+
+    def _make_item(self, file_path: str) -> QListWidgetItem:
+        name = os.path.basename(file_path)
+        metrics = QFontMetrics(self._list.font())
+        elided = metrics.elidedText(name, Qt.TextElideMode.ElideRight, THUMBNAIL_SIZE)
+        item = QListWidgetItem(elided)
+        item.setIcon(QIcon())
+        item.setData(Qt.ItemDataRole.UserRole, file_path)
+        item.setToolTip(file_path)
+        return item
 
     @staticmethod
     def _scan_directory(path: str) -> list[str]:
