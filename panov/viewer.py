@@ -417,6 +417,13 @@ class ViewerMixin:
             self.update()
             return
 
+        if key == Qt.Key.Key_B:
+            win = self.window()
+            dock = getattr(win, "dock", None)
+            if dock is not None:
+                dock.setVisible(not dock.isVisible())
+            return
+
         if key in NAV_KEYS:
             nav = self._input
             nav.keys.add(key)
