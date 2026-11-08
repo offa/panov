@@ -387,7 +387,7 @@ class ViewerMixin:
     # Keyboard
     # ------------------------------------------------------------------ #
 
-    def keyPressEvent(self, event) -> None:  # pylint: disable=invalid-name
+    def keyPressEvent(self, event) -> None:  # pylint: disable=invalid-name,too-many-return-statements
         if event.isAutoRepeat():
             event.accept()
             return

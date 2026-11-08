@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt, QTimer, QSize, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QFontMetrics, QIcon, QImageReader, QPixmap
 from PySide6.QtWidgets import QDockWidget, QListWidget, QListWidgetItem, QWidget
 
@@ -48,13 +48,13 @@ class ImageBrowserDock(QDockWidget):
         self._list.setResizeMode(QListWidget.ResizeMode.Adjust)
         self._list.setMovement(QListWidget.Movement.Static)
         self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        self._list.itemClicked.connect(self._on_item_clicked)
+        self._list.itemClicked.connect(self._on_item_clicked)  # pylint: disable=no-member
         self.setWidget(self._list)
 
         self._thumbnail_timer = QTimer(self)
         self._thumbnail_timer.setSingleShot(True)
         self._thumbnail_timer.setInterval(16)
-        self._thumbnail_timer.timeout.connect(self._process_thumbnails)
+        self._thumbnail_timer.timeout.connect(self._process_thumbnails)  # pylint: disable=no-member
 
     @property
     def current_directory(self) -> str | None:

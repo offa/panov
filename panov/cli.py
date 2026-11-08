@@ -30,7 +30,6 @@ from .main_window import PanovMainWindow
 from .render import GL_RENDERER, SOFTWARE_RENDERERS
 from .viewer import PanoramaOpenGLViewer, PanoramaSoftwareViewer
 
-
 # --------------------------------------------------------------------------- #
 # Environment checks
 # --------------------------------------------------------------------------- #

@@ -23,7 +23,7 @@ import os
 
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QMenu, QMainWindow, QWidget
+from PySide6.QtWidgets import QMainWindow, QMenu, QWidget
 
 from .image_browser import ImageBrowserDock
 from .viewer import ViewerMixin
@@ -51,8 +51,8 @@ class PanovMainWindow(QMainWindow):
         self._browser_action = QAction("Show Image Browser", self)
         self._browser_action.setCheckable(True)
         self._browser_action.setChecked(self._dock.isVisible())
-        self._browser_action.toggled.connect(self._dock.setVisible)
-        self._dock.visibilityChanged.connect(self._browser_action.setChecked)
+        self._browser_action.toggled.connect(self._dock.setVisible)  # pylint: disable=no-member
+        self._dock.visibilityChanged.connect(self._browser_action.setChecked)  # pylint: disable=no-member
 
         view_menu = QMenu("View", self)
         view_menu.addAction(self._browser_action)
