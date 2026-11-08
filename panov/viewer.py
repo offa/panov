@@ -288,7 +288,7 @@ class ViewerMixin:
 
         hints = (
             "left-drag: look   wheel: zoom   arrows/WASD: look   +/-: zoom   "
-            "R: reset   I: info   F: fullscreen   Esc: quit"
+            "R: reset   I: info   B: browser   F: fullscreen   Esc: quit"
         )
         pad = 8
         box_w = metrics.horizontalAdvance(hints) + 2 * pad
