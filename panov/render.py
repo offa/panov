@@ -66,7 +66,15 @@ def qimage_to_array(image: QImage) -> np.ndarray:
     The returned array is contiguous in memory and safe to use after the
     QImage is garbage collected.
     """
+    if image.isNull():
+        raise ValueError("Cannot convert a null QImage to array")
+
     converted = image.convertToFormat(QImage.Format.Format_RGB888)
+    if converted.isNull():
+        raise ValueError(
+            f"Could not convert QImage to RGB888 (original format: {image.format()})"
+        )
+
     width, height = converted.width(), converted.height()
     stride = converted.bytesPerLine()  # may be padded to a 4-byte boundary
 
