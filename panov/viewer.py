@@ -714,11 +714,12 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
 
     def closeEvent(self, event) -> None:
         # Free GL objects while the context is still current.
-        self.makeCurrent()
-        self._texture = None
-        self._program = None
-        self._vao = None
-        self.doneCurrent()
+        if self._gl is not None and self.isValid():
+            self.makeCurrent()
+            self._texture = None
+            self._program = None
+            self._vao = None
+            self.doneCurrent()
         super().closeEvent(event)
 
     # ------------------------------------------------------------------ #
