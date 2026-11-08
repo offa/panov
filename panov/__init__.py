@@ -17,4 +17,4 @@
 
 """Panov - interactive 360 equirectangular panorama viewer."""
 
-__version__ = "0.0.2"
+__version__ = "0.0.3.dev0"
