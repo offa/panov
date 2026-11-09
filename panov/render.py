@@ -245,7 +245,7 @@ class EquirectRenderer:
         np.nan_to_num(v, copy=False)
         np.clip(v, 0.0, self.height - 1.0, out=v)
 
-        ui = u.astype(np.intp) % self.width  # horizontal wrap-around
+        ui = np.floor(u).astype(np.intp) % self.width  # horizontal wrap-around
         vi = v.astype(np.intp)
         return src[vi, ui]
 
