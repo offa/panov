@@ -546,9 +546,12 @@ class PanoramaSoftwareViewer(ViewerMixin, QWidget):
         painter = QPainter(self)
         try:
             self._paint(painter)
-        except (ValueError, RuntimeError, AttributeError):
-            # An unhandled exception inside a Qt virtual can take the whole
-            # process down; never let that happen during a repaint.
+        except Exception:  # pylint: disable=broad-exception-caught  # noqa: BLE001
+            # Last-resort safety net: an unhandled exception inside a Qt
+            # event handler can terminate the process. Expected errors are
+            # handled upstream (load_image, etc.); this catches anything
+            # unexpected (MemoryError, IndexError, TypeError, …) so there's
+            # a degraded frame instead of a crash.
             traceback.print_exc()
             painter.fillRect(self.rect(), QColor(48, 0, 0))
         finally:
@@ -754,7 +757,11 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
                 self._draw_panorama(f, width, height)
                 self._stats.render_ms = (time.perf_counter() - started) * 1000.0
                 self._tick_fps()
-        except (ValueError, RuntimeError, AttributeError):
+        except Exception:  # pylint: disable=broad-exception-caught  # noqa: BLE001
+            # Last-resort safety net: an unhandled exception inside a Qt
+            # event handler can terminate the process. Expected errors are
+            # handled upstream; this catches anything unexpected so there's
+            # a degraded frame instead of a crash.
             traceback.print_exc()
         finally:
             painter.endNativePainting()
