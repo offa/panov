@@ -184,6 +184,7 @@ class ViewerMixin:
                     and abs(image.width() / image.height() - 2.0) > 0.05
                 )
 
+        self.cam.reset()
         self._on_source_changed()
         self._apply_window_common(self._name)
         self._touch()
