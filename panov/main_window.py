@@ -22,7 +22,7 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import QMainWindow, QMenu, QWidget
 
 from .image_browser import ImageBrowserDock
@@ -80,6 +80,10 @@ class PanovMainWindow(QMainWindow):
             else:
                 self.menuBar().show()
         super().changeEvent(event)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self._viewer.release_resources()
+        super().closeEvent(event)
 
     @property
     def viewer(self) -> ViewerMixin:
