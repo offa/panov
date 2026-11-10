@@ -82,7 +82,7 @@ class PanovMainWindow(QMainWindow):
         super().changeEvent(event)
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        self._viewer._release_gl()
+        self._viewer.release_resources()
         super().closeEvent(event)
 
     @property

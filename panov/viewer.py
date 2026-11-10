@@ -208,6 +208,9 @@ class ViewerMixin:
         self._input.interactive = True
         timer.start()
 
+    def release_resources(self) -> None:
+        """Release backend-specific resources. No-op by default."""
+
     @property
     def _backend_label(self) -> str:
         return "cpu"
@@ -714,6 +717,9 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
         self._vao = None
         self._context_hooked = False
         self.doneCurrent()
+
+    def release_resources(self) -> None:
+        self._release_gl()
 
     def closeEvent(self, event) -> None:
         # Free GL objects while the context is still current.
