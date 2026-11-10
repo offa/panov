@@ -194,7 +194,6 @@ class ViewerMixin:
         """Hook for subclasses to rebuild backend state after a source change."""
 
     def _apply_window_common(self, name: str) -> None:
-        self.setWindowTitle(f"Panov - {name}")
         self.setMinimumSize(480, 270)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
