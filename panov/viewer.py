@@ -186,15 +186,14 @@ class ViewerMixin:
 
         self.cam.reset()
         self._on_source_changed()
-        self._apply_window_common(self._name)
+        self._apply_window_common()
         self._touch()
         self.update()
 
     def _on_source_changed(self) -> None:
         """Hook for subclasses to rebuild backend state after a source change."""
 
-    def _apply_window_common(self, name: str) -> None:
-        self.setWindowTitle(f"Panov - {name}")
+    def _apply_window_common(self) -> None:
         self.setMinimumSize(480, 270)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
@@ -513,7 +512,7 @@ class PanoramaSoftwareViewer(ViewerMixin, QWidget):
         source = image if image is not None and not image.isNull() else None
         super().__init__(name, error, show_info, source, parent)
 
-        self._apply_window_common(name)
+        self._apply_window_common()
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
 
         self.renderer = EquirectRenderer(source) if source is not None else None
@@ -606,7 +605,7 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
         source = image if image is not None and not image.isNull() else None
         super().__init__(name, error, show_info, source, parent)
 
-        self._apply_window_common(name)
+        self._apply_window_common()
 
         self._gl = None
         self._program: QOpenGLShaderProgram | None = None
