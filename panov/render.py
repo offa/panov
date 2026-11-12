@@ -80,8 +80,14 @@ def qimage_to_array(image: QImage) -> np.ndarray:
 
     view = np.frombuffer(converted.constBits(), dtype=np.uint8)
     expected = stride * height
-    if view.size < expected:  # defensive: short buffer from some backends
-        view = np.frombuffer(bytes(converted.constBits()), dtype=np.uint8)
+    if view.size < expected:
+        # A QImage whose pixel buffer is shorter than bytesPerLine() * height()
+        # is internally inconsistent; there is no safe way to read it, so fail
+        # loudly instead of letting the reshape below raise a cryptic error.
+        raise ValueError(
+            f"QImage pixel buffer too short: {view.size} bytes, "
+            f"expected {expected} (stride {stride} x {height} rows)"
+        )
     view = view[:expected]
 
     rows = view.reshape(height, stride)[:, : width * 3]

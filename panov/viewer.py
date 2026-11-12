@@ -185,7 +185,16 @@ class ViewerMixin:
                 )
 
         self.cam.reset()
-        self._on_source_changed()
+        try:
+            self._on_source_changed()
+        except Exception as e:  # pylint: disable=broad-exception-caught  # noqa: BLE001
+            # A backend failed to prepare this source (e.g. its pixel buffer
+            # was inconsistent). Surface the reason on the error screen
+            # instead of leaving a stale/missing renderer.
+            traceback.print_exc()
+            self._source = None
+            self._error = f"could not prepare image: {e}"
+            self._aspect_warning = False
         self._apply_window_common()
         self._touch()
         self.update()
