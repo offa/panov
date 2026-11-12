@@ -20,13 +20,90 @@
 from __future__ import annotations
 
 import os
+import sys
+from collections import deque
+from typing import ClassVar
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QFontMetrics, QIcon, QImageReader, QPixmap
+from PySide6.QtCore import QObject, QRunnable, QSize, Qt, QThreadPool, Signal
+from PySide6.QtGui import QFontMetrics, QIcon, QImage, QImageReader, QPixmap
 from PySide6.QtWidgets import QDockWidget, QListWidget, QListWidgetItem, QWidget
 
 IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"})
 THUMBNAIL_SIZE = 64
+THUMBNAIL_WORKERS = 4  # concurrent decodes; keeps CPU use and memory bounded
+
+
+class _ThumbnailBridge(QObject):
+    """Carries thumbnail results from pool worker threads to the GUI thread.
+
+    ``ready`` is emitted from a worker thread; Qt delivers it queued to the
+    GUI thread, where the dock consumes it.  A plain QObject is used because
+    PySide6 binds QRunnable without QObject support, so Python-defined
+    signals on a QRunnable subclass are not connected.
+    """
+
+    ready = Signal(int, int, str, QImage)  # job id, generation, path, image
+
+    def publish(self, job_id: int, generation: int, path: str, image: QImage) -> None:
+        """Publish a finished thumbnail (may be called from any thread)."""
+        self.ready.emit(job_id, generation, path, image)
+
+
+class _ThumbnailJob(QRunnable):
+    """Decode one thumbnail on a global thread pool worker thread.
+
+    The image decode (the expensive part) runs off the GUI thread; the
+    result is reported through the dock's ``_ThumbnailBridge``, which Qt
+    delivers queued to the GUI thread.  The pool auto-deletes the C++ side
+    after ``run()`` returns, so ``active`` must keep the Python wrapper (and
+    with it the C++ object) alive until the job id is released -- even if
+    the dock that started the job is destroyed first (e.g. at application
+    exit).
+    """
+
+    active: ClassVar[dict[int, _ThumbnailJob]] = {}
+    _next_id: ClassVar[int] = 0
+
+    @classmethod
+    def create(
+        cls, generation: int, path: str, bridge: _ThumbnailBridge
+    ) -> _ThumbnailJob:
+        """Register a new job in ``active`` and return it."""
+        job = _ThumbnailJob(cls._next_id, generation, path, bridge)
+        cls._next_id += 1
+        cls.active[job._job_id] = job
+        return job
+
+    @classmethod
+    def release(cls, job_id: int) -> None:
+        """Drop the wrapper of a finished job (no-op if unknown)."""
+        cls.active.pop(job_id, None)
+
+    def __init__(
+        self, job_id: int, generation: int, path: str, bridge: _ThumbnailBridge
+    ) -> None:
+        super().__init__()
+        self._job_id = job_id
+        self._generation = generation
+        self._path = path
+        self._bridge = bridge
+
+    def run(self) -> None:
+        image = QImage()
+        try:
+            reader = QImageReader(self._path)
+            reader.setScaledSize(QSize(THUMBNAIL_SIZE, THUMBNAIL_SIZE))
+            image = reader.read()
+        except Exception as e:  # pylint: disable=broad-exception-caught  # noqa: BLE001
+            # Decode failed (missing/unreadable file): the null image is
+            # still published below so the dock frees the worker slot.
+            print(f"Warning: Could not decode thumbnail: {e}", file=sys.stderr)
+        try:
+            self._bridge.publish(self._job_id, self._generation, self._path, image)
+        except RuntimeError as e:
+            # The bridge was destroyed while we were running (application
+            # exit): the result is no longer needed.
+            print(f"Warning: Could not publish thumbnail: {e}", file=sys.stderr)
 
 
 class ImageBrowserDock(QDockWidget):
@@ -39,8 +116,15 @@ class ImageBrowserDock(QDockWidget):
         self.setWindowTitle("Image Browser")
 
         self._directory: str | None = None
+        self._generation: int = 0  # invalidates in-flight thumbnails
         self._thumbnail_cache: dict[str, QPixmap] = {}
-        self._pending: list[tuple[QListWidgetItem, str]] = []
+        self._items: dict[str, QListWidgetItem] = {}
+        self._pending: deque[str] = deque()
+        self._inflight: int = 0
+
+        # Results hop from worker threads to the GUI thread via this bridge.
+        self._bridge = _ThumbnailBridge(self)
+        self._bridge.ready.connect(self._on_thumbnail_ready)
 
         self._list = QListWidget(self)
         self._list.setViewMode(QListWidget.ViewMode.IconMode)
@@ -50,11 +134,6 @@ class ImageBrowserDock(QDockWidget):
         self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self._list.itemClicked.connect(self._on_item_clicked)  # pylint: disable=no-member
         self.setWidget(self._list)
-
-        self._thumbnail_timer = QTimer(self)
-        self._thumbnail_timer.setSingleShot(True)
-        self._thumbnail_timer.setInterval(16)
-        self._thumbnail_timer.timeout.connect(self._process_thumbnails)  # pylint: disable=no-member
 
     @property
     def current_directory(self) -> str | None:
@@ -69,10 +148,13 @@ class ImageBrowserDock(QDockWidget):
         if path == self._directory:
             return
 
+        # Bumping the generation invalidates in-flight decodes: their
+        # results carry the old generation and are dropped on arrival.
+        self._generation += 1
         self._directory = path
         self._thumbnail_cache.clear()
+        self._items.clear()
         self._pending.clear()
-        self._thumbnail_timer.stop()
         self._list.clear()
 
         if path is None:
@@ -86,11 +168,11 @@ class ImageBrowserDock(QDockWidget):
 
         for file_path in paths:
             item = self._make_item(file_path)
+            self._items[file_path] = item
             self._list.addItem(item)
-            self._pending.append((item, file_path))
+            self._pending.append(file_path)
 
-        if self._pending:
-            self._thumbnail_timer.start()
+        self._dispatch_thumbnails()
 
     def _add_placeholder(self, text: str) -> None:
         item = QListWidgetItem(text)
@@ -125,32 +207,31 @@ class ImageBrowserDock(QDockWidget):
             return []
         return sorted(result, key=lambda p: os.path.basename(p).lower())
 
-    def _process_thumbnails(self) -> None:
-        if not self._pending:
-            self._thumbnail_timer.stop()
-            return
+    def _dispatch_thumbnails(self) -> None:
+        """Start decoding pending thumbnails on the global thread pool."""
+        pool = QThreadPool.globalInstance()
+        while self._inflight < THUMBNAIL_WORKERS and self._pending:
+            job = _ThumbnailJob.create(
+                self._generation, self._pending.popleft(), self._bridge
+            )
+            self._inflight += 1
+            pool.start(job)
 
-        item, path = self._pending.pop(0)
-        pixmap = self._thumbnail_cache.get(path)
-        if pixmap is None:
-            pixmap = self._load_thumbnail(path)
-            if pixmap is not None:
+    def _on_thumbnail_ready(
+        self, job_id: int, generation: int, path: str, image: QImage
+    ) -> None:
+        _ThumbnailJob.release(job_id)
+        self._inflight -= 1
+
+        if generation == self._generation and not image.isNull():
+            item = self._items.get(path)
+            if item is not None:
+                pixmap = QPixmap.fromImage(image)
                 self._thumbnail_cache[path] = pixmap
+                item.setIcon(QIcon(pixmap))
 
-        if pixmap is not None:
-            item.setIcon(QIcon(pixmap))
-
-        if self._pending:
-            self._thumbnail_timer.start()
-
-    @staticmethod
-    def _load_thumbnail(path: str) -> QPixmap | None:
-        reader = QImageReader(path)
-        reader.setScaledSize(QSize(THUMBNAIL_SIZE, THUMBNAIL_SIZE))
-        image = reader.read()
-        if image.isNull():
-            return None
-        return QPixmap.fromImage(image)
+        # The freed slot may pick up the next pending thumbnail.
+        self._dispatch_thumbnails()
 
     def _on_item_clicked(self, item: QListWidgetItem) -> None:
         path = item.data(Qt.ItemDataRole.UserRole)

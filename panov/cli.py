@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from PySide6.QtCore import QThreadPool
 from PySide6.QtGui import QOffscreenSurface, QOpenGLContext, QSurfaceFormat
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
@@ -181,4 +182,8 @@ def main(argv: list[str] | None = None) -> int:
     if viewer.error:
         QMessageBox.warning(main_window, "Panov", viewer.error)
 
-    return app.exec()
+    status = app.exec()
+    # Let in-flight thumbnail decodes finish before the interpreter tears
+    # down the global thread pool (see image_browser._ThumbnailJob).
+    QThreadPool.globalInstance().waitForDone()
+    return status
