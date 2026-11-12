@@ -657,8 +657,26 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
         self._vao = QOpenGLVertexArrayObject(self)
         self._vao.create()
 
-        if self._source is not None:
+        self._rebuild_texture()
+
+    def _rebuild_texture(self) -> None:
+        """Rebuild the GL texture for the current source.
+
+        Runs from ``initializeGL`` and from ``paintGL`` after a new image
+        was loaded.  Sets ``_error`` if the source decoded but is too
+        small to upload, so the error overlay explains the blank frame
+        instead of leaving a silent dark gray one.
+        """
+        if self._source is None:
+            self._texture = None
+        else:
             self._texture = self._build_texture()
+            if self._texture is None:
+                self._error = (
+                    f"image is too small for the GPU renderer "
+                    f"({self._source.width()} x {self._source.height()} px, "
+                    f"minimum is 2x2)"
+                )
         self._needs_texture_rebuild = False
 
     def _build_texture(self) -> QOpenGLTexture | None:
@@ -751,11 +769,7 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
             f.glClear(GL_COLOR_BUFFER_BIT)
 
             if self._needs_texture_rebuild:
-                if self._source is not None:
-                    self._texture = self._build_texture()
-                else:
-                    self._texture = None
-                self._needs_texture_rebuild = False
+                self._rebuild_texture()
 
             if self._program is not None and self._texture is not None:
                 started = time.perf_counter()
@@ -770,7 +784,12 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
             traceback.print_exc()
         finally:
             painter.endNativePainting()
-            if self._source is None or self._gl_failed or self._program is None:
+            if (
+                self._source is None
+                or self._gl_failed
+                or self._program is None
+                or self._texture is None
+            ):
                 self._draw_error(painter, width, height)
             elif self._show_info:
                 self._draw_status(painter)
