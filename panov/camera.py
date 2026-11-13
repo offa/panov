@@ -21,7 +21,7 @@ from __future__ import annotations
 
 
 def wrap180(angle: float) -> float:
-    """Wrap an angle in degrees into [-180, 180)."""
+    """Wrap an angle (in degrees) into the range [-180, 180)."""
     return (angle + 180.0) % 360.0 - 180.0
 
 

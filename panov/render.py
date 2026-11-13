@@ -269,7 +269,7 @@ class EquirectRenderer:
     def _bilinear_axis(
         coords: np.ndarray, size: int, *, wrap: bool
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Return neighboring indices and interpolation fractions for one axis."""
+        """Return neighbouring indices and interpolation fractions for one axis."""
         if wrap:
             i0f = np.floor(coords)
             i0 = i0f.astype(np.intp) % size
@@ -290,7 +290,7 @@ class EquirectRenderer:
         v_bounds: tuple[np.ndarray, np.ndarray],
         f_weights: tuple[np.ndarray, np.ndarray],
     ) -> np.ndarray:
-        """Interpolate the four neighboring texels."""
+        """Interpolate the four neighbouring texels."""
         u0, u1 = u_bounds
         v0, v1 = v_bounds
         fu, fv = f_weights
