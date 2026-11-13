@@ -736,27 +736,23 @@ class PanoramaOpenGLViewer(ViewerMixin, QOpenGLWidget):
             self._error = self._gl_error
 
     def _release_gl(self) -> None:
+        # Disconnect so the about-to-be-destroyed path cannot fire again on a
+        # dying context; initializeGL re-hooks when the context is recreated.
+        if self._context_hooked:
+            self.context().aboutToBeDestroyed.disconnect(self._release_gl)
+            self._context_hooked = False
+        if self._texture is None and self._program is None and self._vao is None:
+            return  # nothing left to free; don't touch the context
         if not self.isValid():
             return
         self.makeCurrent()
         self._texture = None
         self._program = None
         self._vao = None
-        self._context_hooked = False
         self.doneCurrent()
 
     def release_resources(self) -> None:
         self._release_gl()
-
-    def closeEvent(self, event) -> None:
-        # Free GL objects while the context is still current.
-        if self._gl is not None and self.isValid():
-            self.makeCurrent()
-            self._texture = None
-            self._program = None
-            self._vao = None
-            self.doneCurrent()
-        super().closeEvent(event)
 
     # ------------------------------------------------------------------ #
     # Painting
