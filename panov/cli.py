@@ -107,7 +107,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "image",
         nargs="?",
-        help="Path to an equirectangular panorama (.jpg / .png). If omitted, a file dialog is shown.",
+        help=(
+            "Path to an equirectangular panorama (.jpg / .png). "
+            "If omitted, a file dialog is shown."
+        ),
     )
     parser.add_argument(
         "-f",
@@ -165,7 +168,8 @@ def main(argv: list[str] | None = None) -> int:
             main_window,
             "Open panorama",
             "",
-            "Panoramas (*.jpg *.JPG *.jpeg *.JPEG *.png *.PNG *.bmp *.BMP *.tiff *.TIFF *.tif *.TIF);;All files (*)",
+            "Panoramas (*.jpg *.JPG *.jpeg *.JPEG *.png *.PNG "
+            "*.bmp *.BMP *.tiff *.TIFF *.tif *.TIF);;All files (*)",
         )
         if not path:
             return 0
