@@ -93,11 +93,7 @@ def _settle(dock: ImageBrowserDock, app: QApplication) -> None:
     while time.monotonic() < deadline:
         pool.waitForDone(100)
         app.processEvents()
-        if (
-            dock._inflight == 0
-            and not dock._pending
-            and not _ThumbnailJob.active
-        ):
+        if dock._inflight == 0 and not dock._pending and not _ThumbnailJob.active:
             return
     pytest.fail("timed out waiting for thumbnail jobs to settle")
 
@@ -205,8 +201,7 @@ def test_f5_after_adding_file(dock_with_images, app: QApplication) -> None:
         assert isinstance(data, str)
         paths.append(data)
     expected = sorted(
-        [str(directory / name) for name in FILE_NAMES]
-        + [str(directory / added)],
+        [str(directory / name) for name in FILE_NAMES] + [str(directory / added)],
         key=os.path.basename,
     )
     assert paths == expected
@@ -233,9 +228,7 @@ def test_f5_after_removing_file(dock_with_images, app: QApplication) -> None:
     _assert_grid_is_clean(dock, app)
 
 
-def test_directory_switch_keeps_clean_grid(
-    tmp_path: Path, app: QApplication
-) -> None:
+def test_directory_switch_keeps_clean_grid(tmp_path: Path, app: QApplication) -> None:
     """Switching directories is a full repopulate and must stay clean."""
     dir_a, dir_b = tmp_path / "a", tmp_path / "b"
     dir_a.mkdir()
@@ -262,9 +255,7 @@ def test_directory_switch_keeps_clean_grid(
     app.processEvents()
 
 
-def test_empty_directory_shows_placeholder(
-    tmp_path: Path, app: QApplication
-) -> None:
+def test_empty_directory_shows_placeholder(tmp_path: Path, app: QApplication) -> None:
     """An imageless directory shows the placeholder, not a broken grid."""
     empty = tmp_path / "empty"
     empty.mkdir()
