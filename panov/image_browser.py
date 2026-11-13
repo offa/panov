@@ -173,11 +173,18 @@ class ImageBrowserDock(QDockWidget):
             self._rebuild(self._directory)
 
     def _rebuild(self, path: str | None) -> None:
-        """Replace the list contents with a fresh scan of ``path``.
+        """Update the list to show a fresh scan of ``path``.
 
-        Bumps the generation to invalidate in-flight decodes: their
-        results carry the old generation and are dropped on arrival.
-        Restores the previous selection when that file is still present.
+        The scan is diffed against the displayed items, so unchanged
+        files keep their item and thumbnail and only vanished or new
+        files are touched.  Besides the obvious UX wins (no flicker, no
+        re-decoding) this avoids the clear-and-rebuild churn that can
+        leave the icon-mode grid stale and make items overlap.
+
+        In-flight decodes are invalidated by bumping the generation:
+        their results carry the old generation and are dropped on
+        arrival.  The previous selection is restored when that file is
+        still present.
         """
         current: str | None = None
         current_item = self._list.currentItem()
@@ -186,27 +193,22 @@ class ImageBrowserDock(QDockWidget):
             if isinstance(data, str):
                 current = data
 
-        self._generation += 1
         self._directory = path
-        self._thumbnail_cache.clear()
-        self._items.clear()
-        self._pending.clear()
-        self._list.clear()
+        paths = self._scan_directory(path) if path is not None else []
 
-        if path is None:
-            self._add_placeholder("No directory selected")
-            return
-
-        paths = self._scan_directory(path)
         if not paths:
-            self._add_placeholder("No images found")
+            self._show_placeholder(
+                "No directory selected" if path is None else "No images found"
+            )
             return
 
-        for file_path in paths:
-            item = self._make_item(file_path)
-            self._items[file_path] = item
-            self._list.addItem(item)
-            self._pending.append(file_path)
+        if paths == list(self._items):
+            # The displayed list is already up to date: keep the items,
+            # icons and in-flight decodes as they are.
+            return
+
+        self._generation += 1
+        self._repopulate(paths)
 
         if current is not None:
             item = self._items.get(current)
@@ -216,10 +218,67 @@ class ImageBrowserDock(QDockWidget):
 
         self._dispatch_thumbnails()
 
-    def _add_placeholder(self, text: str) -> None:
+    def _show_placeholder(self, text: str) -> None:
+        """Replace the list contents with a single placeholder row."""
+        # Invalidate in-flight decodes: their files are no longer shown,
+        # so their results would be dropped on arrival anyway.
+        self._generation += 1
+        self._pending.clear()
+        self._items.clear()
+        self._thumbnail_cache.clear()
+        self._list.clear()
+
         item = QListWidgetItem(text)
         item.setFlags(Qt.ItemFlag.NoItemFlags)
         self._list.addItem(item)
+        self._list.doItemsLayout()
+
+    def _repopulate(self, paths: list[str]) -> None:
+        """Update the displayed items in place to match ``paths``.
+
+        Removes items for files that vanished, inserts items for new
+        files (keeping the scan order) and re-queues kept files that
+        have no thumbnail yet (their old-generation jobs, if any, were
+        invalidated).  ``_generation`` must already be bumped.
+        """
+        self._pending.clear()
+        new_paths = set(paths)
+
+        for path in list(self._items):
+            if path not in new_paths:
+                item = self._items.pop(path)
+                self._list.takeItem(self._list.row(item))
+                self._thumbnail_cache.pop(path, None)
+
+        # A leftover placeholder (only present while no real items
+        # exist) always sits at row 0.
+        if self._list.count() != len(self._items):
+            self._list.takeItem(0)
+
+        cursor = 0
+        ordered: dict[str, QListWidgetItem] = {}
+        for path in paths:
+            item = self._items.get(path)
+            if item is None:
+                item = self._make_item(path)
+                self._list.insertItem(cursor, item)
+                self._pending.append(path)
+                cursor += 1
+            else:
+                # Kept file: pass it, and re-decode if its thumbnail is
+                # missing.
+                cursor = self._list.row(item) + 1
+                if path not in self._thumbnail_cache:
+                    self._pending.append(path)
+            ordered[path] = item
+
+        # Keep _items in display order: an unchanged scan is detected by
+        # comparing it against the scan result.
+        self._items = ordered
+
+        # The icon-mode grid can go stale when items are inserted or
+        # removed around existing ones; force a clean relayout.
+        self._list.doItemsLayout()
 
     def _make_item(self, file_path: str) -> QListWidgetItem:
         name = os.path.basename(file_path)
@@ -283,10 +342,13 @@ class ImageBrowserDock(QDockWidget):
     # pylint: disable=invalid-name
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         # F5 re-scans the current directory (key events only reach the
-        # list, so the filter is active whenever it has the focus).
+        # list, so the filter is active whenever it has the focus).  Only
+        # the press triggers the refresh; the release falls through to
+        # the list.
         if (
             obj is self._list
             and isinstance(event, QKeyEvent)
+            and event.type() == QEvent.Type.KeyPress
             and not event.isAutoRepeat()
             and event.key() == Qt.Key.Key_F5
         ):
