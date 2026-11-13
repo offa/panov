@@ -132,7 +132,8 @@ class ImageBrowserDock(QDockWidget):
         self._list.setResizeMode(QListWidget.ResizeMode.Adjust)
         self._list.setMovement(QListWidget.Movement.Static)
         self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        self._list.itemClicked.connect(self._on_item_clicked)  # pylint: disable=no-member
+        # pylint: disable=no-member
+        self._list.itemClicked.connect(self._on_item_clicked)
         self.setWidget(self._list)
 
     @property

@@ -3,7 +3,7 @@ name = "panov"
 dynamic = ["version"]
 authors = [{name = "offa"}]
 description = "Viewer for 360° equirectangular panoramas."
-license = {file = "LICENSE"}
+license = "GPL-3.0-or-later"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -14,14 +14,17 @@ keywords = ["panorama", "360", "equirectangular", "viewer"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Topic :: Multimedia :: Graphics",
 ]
 
+[project.scripts]
+panov = "panov.cli:main"
+
 [project.urls]
-"Homepage" = "https://github.com/offa/panov"
+Homepage = "https://github.com/offa/panov"
+Source = "https://github.com/offa/panov"
 
 [project.optional-dependencies]
 dev = [
@@ -31,8 +34,15 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.dynamic]
 version = {attr = "panov.__version__"}
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+extend-select = ["E501"]
