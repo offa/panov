@@ -92,11 +92,27 @@ def gl_is_usable() -> tuple[bool, str]:
 
 
 def parse_size(text: str) -> tuple[int, int]:
+    """Parse a ``WxH`` window size, falling back to 1280x720 with a warning.
+
+    No lower bound is applied here: the viewer widget's minimum size is
+    the single source of truth, and Qt clamps the window to it.
+    """
     try:
         width, height = text.lower().split("x")
-        return max(320, int(width)), max(240, int(height))
+        size = (int(width), int(height))
     except (ValueError, AttributeError):
+        print(
+            f"Warning: malformed --size {text!r}, using default 1280x720",
+            file=sys.stderr,
+        )
         return 1280, 720
+    if min(size) < 1:
+        print(
+            f"Warning: --size {text!r} is not positive, using default 1280x720",
+            file=sys.stderr,
+        )
+        return 1280, 720
+    return size
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -124,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--size",
         default="1280x720",
-        help="Initial window size, e.g. 1280x720",
+        help="Initial window size, e.g. 1280x720 (minimum 480x270)",
     )
     parser.add_argument(
         "--no-info",
@@ -142,6 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Uncap the frame rate (renders as fast as the GPU allows)",
     )
     args = parser.parse_args(argv)
+    size = parse_size(args.size)
 
     configure_surface_format(vsync=not args.no_vsync)
 
@@ -172,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
 
     main_window.load_image(path)
     viewer.cam.set_fov(args.fov)
-    main_window.resize(*parse_size(args.size))
+    main_window.resize(*size)
 
     if args.fullscreen:
         main_window.showFullScreen()
