@@ -24,9 +24,18 @@ import sys
 from collections import deque
 from typing import ClassVar
 
-from PySide6.QtCore import QObject, QRunnable, QSize, Qt, QThreadPool, Signal
-from PySide6.QtGui import QFontMetrics, QIcon, QImage, QImageReader, QPixmap
-from PySide6.QtWidgets import QDockWidget, QListWidget, QListWidgetItem, QWidget
+from PySide6.QtCore import (
+    QEvent,
+    QObject,
+    QPoint,
+    QRunnable,
+    QSize,
+    Qt,
+    QThreadPool,
+    Signal,
+)
+from PySide6.QtGui import QFontMetrics, QIcon, QImage, QImageReader, QKeyEvent, QPixmap
+from PySide6.QtWidgets import QDockWidget, QListWidget, QListWidgetItem, QMenu, QWidget
 
 IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"})
 THUMBNAIL_SIZE = 64
@@ -132,8 +141,15 @@ class ImageBrowserDock(QDockWidget):
         self._list.setResizeMode(QListWidget.ResizeMode.Adjust)
         self._list.setMovement(QListWidget.Movement.Static)
         self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        # itemActivated (not itemClicked) so Enter/Return on the
+        # highlighted item loads it too; a single click still activates
+        # in the default SingleClick activation mode.
         # pylint: disable=no-member
-        self._list.itemClicked.connect(self._on_item_clicked)
+        self._list.itemActivated.connect(self._on_item_activated)
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        # pylint: disable=no-member
+        self._list.customContextMenuRequested.connect(self._on_context_menu)
+        self._list.installEventFilter(self)
         self.setWidget(self._list)
 
     @property
@@ -149,8 +165,27 @@ class ImageBrowserDock(QDockWidget):
         if path == self._directory:
             return
 
-        # Bumping the generation invalidates in-flight decodes: their
-        # results carry the old generation and are dropped on arrival.
+        self._rebuild(path)
+
+    def refresh(self) -> None:
+        """Re-scan the current directory (e.g. after files were added)."""
+        if self._directory is not None:
+            self._rebuild(self._directory)
+
+    def _rebuild(self, path: str | None) -> None:
+        """Replace the list contents with a fresh scan of ``path``.
+
+        Bumps the generation to invalidate in-flight decodes: their
+        results carry the old generation and are dropped on arrival.
+        Restores the previous selection when that file is still present.
+        """
+        current: str | None = None
+        current_item = self._list.currentItem()
+        if current_item is not None:
+            data = current_item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(data, str):
+                current = data
+
         self._generation += 1
         self._directory = path
         self._thumbnail_cache.clear()
@@ -172,6 +207,12 @@ class ImageBrowserDock(QDockWidget):
             self._items[file_path] = item
             self._list.addItem(item)
             self._pending.append(file_path)
+
+        if current is not None:
+            item = self._items.get(current)
+            if item is not None:
+                self._list.setCurrentItem(item)
+                self._list.scrollToItem(item)
 
         self._dispatch_thumbnails()
 
@@ -234,7 +275,28 @@ class ImageBrowserDock(QDockWidget):
         # The freed slot may pick up the next pending thumbnail.
         self._dispatch_thumbnails()
 
-    def _on_item_clicked(self, item: QListWidgetItem) -> None:
+    def _on_item_activated(self, item: QListWidgetItem) -> None:
         path = item.data(Qt.ItemDataRole.UserRole)
         if isinstance(path, str) and path:
             self.image_selected.emit(path)
+
+    # pylint: disable=invalid-name
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        # F5 re-scans the current directory (key events only reach the
+        # list, so the filter is active whenever it has the focus).
+        if (
+            obj is self._list
+            and isinstance(event, QKeyEvent)
+            and not event.isAutoRepeat()
+            and event.key() == Qt.Key.Key_F5
+        ):
+            self.refresh()
+            return True
+        return super().eventFilter(obj, event)
+
+    def _on_context_menu(self, position: QPoint) -> None:
+        menu = QMenu(self._list)
+        refresh_action = menu.addAction("Refresh")
+        refresh_action.setEnabled(self._directory is not None)
+        refresh_action.triggered.connect(self.refresh)  # pylint: disable=no-member
+        menu.exec(self._list.mapToGlobal(position))

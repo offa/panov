@@ -41,6 +41,7 @@ class PanovMainWindow(QMainWindow):
         super().__init__(parent)
 
         self._viewer = viewer
+        self._loaded_path: str | None = None
         self.setCentralWidget(viewer)
         self.setWindowTitle("Panov")
 
@@ -66,8 +67,15 @@ class PanovMainWindow(QMainWindow):
             self._dock.set_directory(initial_directory)
 
     def load_image(self, path: str) -> None:
+        path = os.path.abspath(path)
+        if path == self._loaded_path:
+            # The same file was requested again (e.g. Enter or a
+            # double-click fired twice): it is already loaded, so skip
+            # the redundant decode and camera reset.
+            return
+        self._loaded_path = path
         self._viewer.load_image(path)
-        directory = os.path.dirname(os.path.abspath(path))
+        directory = os.path.dirname(path)
         if directory:
             self._dock.set_directory(directory)
         self.setWindowTitle(f"Panov - {os.path.basename(path) or 'no image'}")
