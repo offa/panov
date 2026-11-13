@@ -8,7 +8,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "PySide6>=6.12.0,<7",
-    "numpy>=2.5.4,<2.6",
+    "numpy>=2.5.4,<3",
 ]
 keywords = ["panorama", "360", "equirectangular", "viewer"]
 classifiers = [
