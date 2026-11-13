@@ -44,7 +44,7 @@ def configure_surface_format(vsync: bool = True) -> None:
     fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
     fmt.setDepthBufferSize(0)
     fmt.setStencilBufferSize(0)
-    fmt.setSamples(0)  # we sample a texture, not draw edges
+    fmt.setSamples(0)  # no MSAA: a fullscreen quad has no edges to antialias
     fmt.setSwapInterval(1 if vsync else 0)
     QSurfaceFormat.setDefaultFormat(fmt)
 
