@@ -52,8 +52,10 @@ class PanovMainWindow(QMainWindow):
         self._browser_action = QAction("Show Image Browser", self)
         self._browser_action.setCheckable(True)
         self._browser_action.setChecked(self._dock.isVisible())
-        self._browser_action.toggled.connect(self._dock.setVisible)  # pylint: disable=no-member
-        self._dock.visibilityChanged.connect(self._browser_action.setChecked)  # pylint: disable=no-member
+        # pylint: disable=no-member
+        self._browser_action.toggled.connect(self._dock.setVisible)
+        # pylint: disable=no-member
+        self._dock.visibilityChanged.connect(self._browser_action.setChecked)
 
         view_menu = QMenu("View", self)
         view_menu.addAction(self._browser_action)

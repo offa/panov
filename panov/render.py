@@ -44,8 +44,6 @@ SOFTWARE_RENDERERS = (
     "softpipe",
     "swrast",
     "gdi generic",
-    "microsoft basic render",
-    "mesa offscreen",
 )
 
 

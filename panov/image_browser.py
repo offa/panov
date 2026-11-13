@@ -144,9 +144,11 @@ class ImageBrowserDock(QDockWidget):
         # itemActivated (not itemClicked) so Enter/Return on the
         # highlighted item loads it too; a single click still activates
         # in the default SingleClick activation mode.
-        self._list.itemActivated.connect(self._on_item_activated)  # pylint: disable=no-member
+        # pylint: disable=no-member
+        self._list.itemActivated.connect(self._on_item_activated)
         self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._list.customContextMenuRequested.connect(self._on_context_menu)  # pylint: disable=no-member
+        # pylint: disable=no-member
+        self._list.customContextMenuRequested.connect(self._on_context_menu)
         self._list.installEventFilter(self)
         self.setWidget(self._list)
 
@@ -278,7 +280,8 @@ class ImageBrowserDock(QDockWidget):
         if isinstance(path, str) and path:
             self.image_selected.emit(path)
 
-    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # pylint: disable=invalid-name
+    # pylint: disable=invalid-name
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         # F5 re-scans the current directory (key events only reach the
         # list, so the filter is active whenever it has the focus).
         if (
