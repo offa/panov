@@ -42,7 +42,7 @@ from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
-from panov.image_browser import _ThumbnailJob, ImageBrowserDock
+from panov.image_browser import ImageBrowserDock, _ThumbnailJob
 
 NUM_FILES = 8
 FILE_NAMES = [f"img_{i:02d}.png" for i in range(NUM_FILES)]
