@@ -105,16 +105,11 @@ class _Stats:
 class ViewerMixin:
     """Camera navigation, input handling and overlay drawing.
 
-    Mixed into a QWidget subclass.
+    Mixed into a QWidget subclass; ``__init__`` sets up ``cam``,
+    ``_source``, ``_error``, ``_show_info``, ``_input`` and ``_stats``.
 
-    Concrete viewers must also provide:
+    Concrete viewers must additionally provide:
 
-    ``cam``            Camera instance (set up by ``__init__``)
-    ``_source``        QImage or None
-    ``_error``         str or None
-    ``_show_info``     bool
-    ``_input``         _Input (set up by ``__init__``)
-    ``_stats``         _Stats (set up by ``__init__``)
     ``_settle_timer``  QTimer, or absent/None for viewers with no settle delay
     ``_backend_label`` str property, used by the status overlay
     """
@@ -210,7 +205,11 @@ class ViewerMixin:
     # -- hooks overridden by the CPU viewer -------------------------------- #
 
     def _touch(self) -> None:
-        """Mark the camera as moving so we render cheaply."""
+        """Mark navigation as active and (re)start the settle timer.
+
+        Keeps the CPU viewer rendering cheaply while input is in flight;
+        no-op for viewers without a settle timer.
+        """
         timer = getattr(self, "_settle_timer", None)
         if timer is None:
             return

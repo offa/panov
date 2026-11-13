@@ -94,8 +94,9 @@ def gl_is_usable() -> tuple[bool, str]:
 def parse_size(text: str) -> tuple[int, int]:
     """Parse a ``WxH`` window size, falling back to 1280x720 with a warning.
 
-    No lower bound is applied here: the viewer widget's minimum size is
-    the single source of truth, and Qt clamps the window to it.
+    No minimum size is applied beyond positivity: the viewer widget's
+    minimum size (480x270) is the single source of truth, and Qt clamps
+    the window to it.
     """
     try:
         width, height = text.lower().split("x")
